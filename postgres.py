@@ -1,14 +1,17 @@
-import asyncio
-import os
-from typing import Any, Dict, List, Optional
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from mcp.server.models import InitializationOptions
-import mcp.types as types
-from mcp.server import NotificationOptions, Server
-import mcp.server.stdio
+# Giải thích code file postgres.py - Tích hợp PostgreSQL và MCP server
 
-# Cấu hình kết nối database từ biến môi trường
+# Import các thư viện cần thiết
+import asyncio                       # Cho phép xử lý bất đồng bộ
+import os                            # Đọc biến môi trường
+from typing import Any, Dict, List, Optional
+import psycopg2                      # Thư viện kết nối PostgreSQL
+from psycopg2.extras import RealDictCursor   # Kiểu cursor trả về dict
+from mcp.server.models import InitializationOptions    # Cấu hình MCP server
+import mcp.types as types                         # Các kiểu dữ liệu MCP
+from mcp.server import NotificationOptions, Server  # MCP Server và options
+import mcp.server.stdio                           # Giao tiếp chuẩn I/O MCP
+
+# 1. Đọc cấu hình database từ biến môi trường
 DB_CONFIG = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
     "port": int(os.getenv("POSTGRES_PORT", "5432")),
@@ -17,15 +20,23 @@ DB_CONFIG = {
     "password": os.getenv("POSTGRES_PASSWORD", ""),
 }
 
-# Cache cho schemas
+# 2. Khai báo cache lưu trữ schema các bảng để tăng tốc truy xuất metadata
 schema_cache: Dict[str, Any] = {}
 
+# 3. Hàm tạo connection PostgreSQL 
 def get_db_connection():
-    """Tạo kết nối đến PostgreSQL database"""
+    """
+    Tạo kết nối đến PostgreSQL sử dụng các thông số cấu hình từ DB_CONFIG.
+    Dùng RealDictCursor để các kết quả truy vấn trả về dạng dict dễ xử lý.
+    """
     return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
 
+# 4. Lấy schema của tất cả các bảng trong database
 def fetch_table_schemas() -> Dict[str, Any]:
-    """Lấy schema của tất cả các bảng trong database"""
+    """
+    Truy vấn thông tin schema các bảng trong database (thông qua information_schema.columns).
+    Trả về dict chứa thông tin từng bảng và danh sách các cột của bảng đó.
+    """
     query = """
         SELECT 
             table_schema,
@@ -38,13 +49,11 @@ def fetch_table_schemas() -> Dict[str, Any]:
         WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
         ORDER BY table_schema, table_name, ordinal_position;
     """
-    
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(query)
             rows = cur.fetchall()
-            
         schemas = {}
         for row in rows:
             key = f"{row['table_schema']}.{row['table_name']}"
@@ -60,31 +69,31 @@ def fetch_table_schemas() -> Dict[str, Any]:
                 "nullable": row['is_nullable'] == "YES",
                 "default": row['column_default'],
             })
-        
         return schemas
     finally:
         conn.close()
 
+# 5. Thực thi một câu lệnh SQL chỉ đọc (SELECT)
 def execute_read_only_query(sql: str) -> Dict[str, Any]:
-    """Thực thi câu lệnh SQL chỉ đọc"""
-    # Kiểm tra câu lệnh chỉ được phép SELECT
+    """
+    Kiểm tra Câu lệnh SQL có phải SELECT không. Nếu hợp lệ thì thực thi và trả về kết quả.
+    Không cho phép các lệnh có thể thay đổi dữ liệu (INSERT, UPDATE, ...).
+    Trả về: rows, số dòng, tên các cột.
+    """
     normalized_sql = sql.strip().lower()
     write_operations = ['insert', 'update', 'delete', 'drop', 'create', 
-                       'alter', 'truncate', 'grant', 'revoke']
-    
+                        'alter', 'truncate', 'grant', 'revoke']
     for op in write_operations:
         if normalized_sql.startswith(op):
             raise ValueError(
                 f"Thao tác ghi '{op}' không được phép. "
                 "Chỉ cho phép câu lệnh SELECT."
             )
-    
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(sql)
             rows = cur.fetchall()
-            
             return {
                 "rows": [dict(row) for row in rows],
                 "row_count": len(rows),
@@ -93,15 +102,17 @@ def execute_read_only_query(sql: str) -> Dict[str, Any]:
     finally:
         conn.close()
 
-# Khởi tạo MCP server
+# 6. Khởi tạo đối tượng MCP server cho Postgres backend
 server = Server("postgres-mcp-server")
 
+# 7. Định nghĩa endpoint trả về danh sách resource (các bảng) trong database
 @server.list_resources()
 async def handle_list_resources() -> list[types.Resource]:
-    """Liệt kê tất cả table schemas như resources"""
+    """
+    Xử lý yêu cầu liệt kê resource: Lấy các bảng (schema) trong DB, trả về dạng MCP Resource.
+    """
     global schema_cache
     schema_cache = fetch_table_schemas()
-    
     resources = []
     for key, schema in schema_cache.items():
         resources.append(
@@ -112,29 +123,33 @@ async def handle_list_resources() -> list[types.Resource]:
                 mimeType="application/json",
             )
         )
-    
     return resources
 
+# 8. Endpoint đọc chi tiết của một resource/table (xem cấu trúc bảng)
 @server.read_resource()
 async def handle_read_resource(uri: str) -> str:
-    """Đọc thông tin chi tiết của một table schema"""
+    """
+    Nhận vào một uri (postgres://schema/schema.table), trả về chi tiết metadata schema bảng đó ở dạng JSON.
+    """
     if not uri.startswith("postgres://schema/"):
         raise ValueError(f"URI không hợp lệ: {uri}")
-    
     table_key = uri.replace("postgres://schema/", "")
-    
     if table_key not in schema_cache:
         schema_cache.update(fetch_table_schemas())
-    
     if table_key not in schema_cache:
         raise ValueError(f"Không tìm thấy bảng: {table_key}")
-    
     import json
     return json.dumps(schema_cache[table_key], indent=2, ensure_ascii=False)
 
+# 9. Định nghĩa các công cụ (tools) hỗ trợ: Query SQL, liệt kê bảng, mô tả bảng chi tiết
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
-    """Liệt kê các tools có sẵn"""
+    """
+    Trả về danh sách các tool hỗ trợ thao tác với DB:
+      - query_database: thực hiện SELECT SQL
+      - list_tables: liệt kê bảng
+      - describe_table: xem chi tiết cấu trúc bảng
+    """
     return [
         types.Tool(
             name="query_database",
@@ -174,18 +189,22 @@ async def handle_list_tools() -> list[types.Tool]:
         ),
     ]
 
+# 10. Xử lý gọi các công cụ nêu trên (tool call)
 @server.call_tool()
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    """Xử lý các tool calls"""
+    """
+    Nhận tên công cụ được gọi và tham số. Xử lý các gọi tool:
+    - Nếu tool là query_database: thực thi lệnh SQL SELECT.
+    - Nếu tool là list_tables: trả về danh sách các bảng.
+    - Nếu tool là describe_table: trả về chi tiết schema bảng đó.
+    """
     import json
-    
     if name == "query_database":
         sql = arguments.get("sql")
         if not sql:
             raise ValueError("Thiếu tham số 'sql'")
-        
         try:
             result = execute_read_only_query(sql)
             return [
@@ -196,7 +215,6 @@ async def handle_call_tool(
             ]
         except Exception as e:
             return [types.TextContent(type="text", text=f"Lỗi: {str(e)}")]
-    
     elif name == "list_tables":
         schemas = fetch_table_schemas()
         tables = [
@@ -209,21 +227,17 @@ async def handle_call_tool(
                 text=json.dumps(tables, indent=2, ensure_ascii=False),
             )
         ]
-    
     elif name == "describe_table":
         table_name = arguments.get("table_name")
         if not table_name:
             raise ValueError("Thiếu tham số 'table_name'")
-        
         schemas = fetch_table_schemas()
-        
-        # Tìm bảng (có thể có hoặc không có schema prefix)
+        # Hỗ trợ nhận table_name là full (schema.table) hoặc chỉ tên table
         matching_key = None
         for key in schemas.keys():
             if key == table_name or key.endswith(f".{table_name}"):
                 matching_key = key
                 break
-        
         if not matching_key:
             return [
                 types.TextContent(
@@ -231,19 +245,21 @@ async def handle_call_tool(
                     text=f"Không tìm thấy bảng: {table_name}"
                 )
             ]
-        
         return [
             types.TextContent(
                 type="text",
                 text=json.dumps(schemas[matching_key], indent=2, ensure_ascii=False),
             )
         ]
-    
     raise ValueError(f"Tool không xác định: {name}")
 
+# 11. Định nghĩa các prompt (lời nhắc) thường dùng cho AI phân tích dữ liệu
 @server.list_prompts()
 async def handle_list_prompts() -> list[types.Prompt]:
-    """Liệt kê các prompts cho phân tích dữ liệu thường dùng"""
+    """
+    Trả về các prompt hữu ích cho việc phân tích và hỏi đáp về dữ liệu.
+    Ví dụ: phân tích bảng, tìm giá trị trùng lặp, kiểm tra chất lượng dữ liệu, thống kê tổng quan bảng.
+    """
     return [
         types.Prompt(
             name="analyze_table",
@@ -296,12 +312,15 @@ async def handle_list_prompts() -> list[types.Prompt]:
         ),
     ]
 
+# 12. Xử lý lấy mô tả (prompt) cụ thể dựa trên tên prompt và tham số (table_name, v.v.)
 @server.get_prompt()
 async def handle_get_prompt(
     name: str, arguments: dict[str, str] | None
 ) -> types.GetPromptResult:
-    """Xử lý prompt requests"""
-    
+    """
+    Trả về nội dung mẫu lời nhắc (prompt template, message) tuỳ từng loại phân tích.
+    Dùng cho AI chatbot hoặc front-end truyền vào để sinh câu hỏi ra LLM.
+    """
     if name == "analyze_table":
         table_name = arguments.get("table_name")
         return types.GetPromptResult(
@@ -321,7 +340,6 @@ async def handle_get_prompt(
                 )
             ],
         )
-    
     elif name == "find_duplicates":
         table_name = arguments.get("table_name")
         columns = arguments.get("columns")
@@ -343,7 +361,6 @@ Vui lòng:
                 )
             ],
         )
-    
     elif name == "data_quality_check":
         table_name = arguments.get("table_name")
         return types.GetPromptResult(
@@ -364,7 +381,6 @@ Vui lòng:
                 )
             ],
         )
-    
     elif name == "summarize_table":
         table_name = arguments.get("table_name")
         return types.GetPromptResult(
@@ -386,11 +402,13 @@ Vui lòng:
                 )
             ],
         )
-    
     raise ValueError(f"Prompt không xác định: {name}")
 
+# 13. Hàm main bất đồng bộ – chạy server MCP giao tiếp qua stdin/stdout (CLI integration)
 async def main():
-    """Main entry point"""
+    """
+    Điểm vào chương trình: mở giao tiếp chuẩn stdin/stdout, khởi động MCP server, cung cấp các capabilities (tính năng) ra ngoài.
+    """
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -405,5 +423,7 @@ async def main():
             ),
         )
 
+# 14. Chạy chương trình nếu là main module
 if __name__ == "__main__":
     asyncio.run(main())
+# Code này xây dựng một lớp giao diện tiêu chuẩn hóa giữa một database Postgres và hệ thống MCP để truy vấn, phân tích dữ liệu, sinh prompt AI tự động hóa.
