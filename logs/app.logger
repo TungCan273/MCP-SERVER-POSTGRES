@@ -1,0 +1,43 @@
+[2025-12-17 09:18:25] [INFO] [local_sentiment_model.py:258] - Starting HF Local MCP Server...
+[2025-12-17 09:18:25] [INFO] [local_sentiment_model.py:259] - Default model: TungCan/tuning-sentiment-abp-pos
+[2025-12-17 09:18:25] [INFO] [local_sentiment_model.py:260] - Default device: cpu
+[2025-12-17 09:18:34] [INFO] [postgres.py:46] - Schema cache initialized with TTL: 300s
+[2025-12-17 09:18:34] [INFO] [postgres.py:608] - Starting postgres-mcp-server...
+[2025-12-17 09:18:34] [INFO] [postgres.py:94] - ✅ Database connection pool initialized
+[2025-12-17 09:18:34] [INFO] [postgres.py:223] - Fetched schema for 52 tables
+[2025-12-17 09:18:34] [INFO] [postgres.py:66] - Schema cache refreshed: 52 tables
+[2025-12-17 09:20:31] [INFO] [sentiment.py:45] - ✅ Đang sử dụng OpenRouter với model: openai/gpt-oss-20b
+[2025-12-17 09:24:51] [INFO] [sentiment.py:45] - ✅ Đang sử dụng OpenRouter với model: openai/gpt-oss-20b
+[2025-12-17 09:24:51] [INFO] [sentiment.py:177] - Use handle tool
+[2025-12-17 09:24:53] [INFO] [postgres.py:46] - Schema cache initialized with TTL: 300s
+[2025-12-17 09:24:53] [INFO] [postgres.py:608] - Starting postgres-mcp-server...
+[2025-12-17 09:24:53] [INFO] [postgres.py:94] - ✅ Database connection pool initialized
+[2025-12-17 09:24:53] [INFO] [postgres.py:223] - Fetched schema for 52 tables
+[2025-12-17 09:24:53] [INFO] [postgres.py:66] - Schema cache refreshed: 52 tables
+[2025-12-17 09:25:00] [INFO] [local_sentiment_model.py:258] - Starting HF Local MCP Server...
+[2025-12-17 09:25:00] [INFO] [local_sentiment_model.py:259] - Default model: TungCan/tuning-sentiment-abp-pos
+[2025-12-17 09:25:00] [INFO] [local_sentiment_model.py:260] - Default device: cpu
+[2025-12-17 09:33:04] [INFO] [postgres.py:376] - Tool called: query_database
+[2025-12-17 09:33:04] [ERROR] [postgres.py:439] - Tool call failed: Pattern không an toàn được phát hiện: --
+[2025-12-17 09:33:06] [INFO] [postgres.py:376] - Tool called: query_database
+[2025-12-17 09:33:06] [INFO] [postgres.py:244] - Executing query: SELECT 
+    p.content,
+    p.title,
+    l.sentiment
+FROM tbl_posts p
+JOIN tbl_trans_detail_log l
+   ...
+[2025-12-17 09:33:10] [INFO] [postgres.py:256] - Query returned 10 rows
+[2025-12-17 09:35:35] [INFO] [postgres.py:639] - Connection pool closed
+[2025-12-17 09:36:25] [INFO] [sentiment.py:45] - ✅ Đang sử dụng OpenRouter với model: openai/gpt-oss-20b
+[2025-12-17 09:36:26] [INFO] [sentiment.py:177] - Use handle tool
+[2025-12-17 09:36:31] [INFO] [postgres.py:46] - Schema cache initialized with TTL: 300s
+[2025-12-17 09:36:31] [INFO] [postgres.py:608] - Starting postgres-mcp-server...
+[2025-12-17 09:36:31] [INFO] [postgres.py:94] - ✅ Database connection pool initialized
+[2025-12-17 09:36:31] [INFO] [postgres.py:223] - Fetched schema for 52 tables
+[2025-12-17 09:36:31] [INFO] [postgres.py:66] - Schema cache refreshed: 52 tables
+[2025-12-17 09:36:53] [INFO] [local_sentiment_model.py:258] - Starting HF Local MCP Server...
+[2025-12-17 09:36:53] [INFO] [local_sentiment_model.py:259] - Default model: TungCan/tuning-sentiment-abp-pos
+[2025-12-17 09:36:53] [INFO] [local_sentiment_model.py:260] - Default device: cpu
+[2025-12-17 09:36:53] [INFO] [postgres.py:639] - Connection pool closed
+[2025-12-17 10:10:08] [INFO] [postgres.py:639] - Connection pool closed
